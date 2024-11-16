@@ -137,43 +137,104 @@ def train_tag_logreg(data):
     print(f'> Finished training logistic regression on {len(train_X)} tokens')
     return lambda token: _predict_tag_logreg(token, model, tag_encoder)
 
-def _predict_my_model(token, model_parameters):
-    """使用训练好的逻辑回归模型和附加特征预测给定 token 的标签。
 
-    参数：
-        token: 要预测的 spaCy token。
-        model_parameters: 包含模型和编码器的参数字典。
+def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encoder):
+    features = []
 
-    返回：
-        List[Tuple[str, float]]: 标签和对应概率的排序列表。
-    """
+    features.extend(token.vector)
 
+    pos_encoded = pos_encoder.transform([[token.pos_]])[0]
+    dep_encoded = dep_encoder.transform([[token.dep_]])[0]
+    lemma_encoded = lemma_encoder.transform([[token.lemma_]])[0]
+    features.extend(pos_encoded)
+    features.extend(dep_encoded)
+    features.extend(lemma_encoded)
+
+    features.append(int(token.pos_ == 'NUM'))
+
+    features.append(len(token.text))
+
+    morph_features = token.morph.to_dict()
+    morph_feature_values = [f"{key}={value}" for key, value in morph_features.items()]
+    if not morph_feature_values:
+        morph_feature_values = ['None']
+    morph_encoded = morph_encoder.transform(np.array(morph_feature_values).reshape(-1, 1)).sum(axis=0)
+    features.extend(morph_encoded)
+
+    if token.i > 0:
+        prev_token = token.doc[token.i - 1]
+        features.extend(prev_token.vector)
+        pos_encoded = pos_encoder.transform([[prev_token.pos_]])[0]
+        dep_encoded = dep_encoder.transform([[prev_token.dep_]])[0]
+        lemma_encoded = lemma_encoder.transform([[prev_token.lemma_]])[0]
+        features.extend(pos_encoded)
+        features.extend(dep_encoded)
+        features.extend(lemma_encoded)
+        features.append(int(prev_token.pos_ == 'NUM'))
+    else:
+        features.extend(np.zeros_like(token.vector))
+        features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
+        features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
+        features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
+        features.append(0)
+
+    if token.i < len(token.doc) - 1:
+        next_token = token.doc[token.i + 1]
+        features.extend(next_token.vector)
+        pos_encoded = pos_encoder.transform([[next_token.pos_]])[0]
+        dep_encoded = dep_encoder.transform([[next_token.dep_]])[0]
+        lemma_encoded = lemma_encoder.transform([[next_token.lemma_]])[0]
+        features.extend(pos_encoded)
+        features.extend(dep_encoded)
+        features.extend(lemma_encoded)
+        features.append(int(next_token.pos_ == 'NUM'))
+    else:
+        features.extend(np.zeros_like(token.vector))
+        features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
+        features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
+        features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
+        features.append(0)
+
+    head_token = token.head
+    if head_token is not token:
+        # Head token's embedding
+        features.extend(head_token.vector)
+        # Head token's POS and DEP
+        pos_encoded = pos_encoder.transform([[head_token.pos_]])[0]
+        dep_encoded = dep_encoder.transform([[head_token.dep_]])[0]
+        lemma_encoded = lemma_encoder.transform([[head_token.lemma_]])[0]
+        features.extend(pos_encoded)
+        features.extend(dep_encoded)
+        features.extend(lemma_encoded)
+        features.append(int(head_token.pos_ == 'NUM'))
+    else:
+        # if it is the root token, fill with zeros
+        features.extend(np.zeros_like(token.vector))
+        features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
+        features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
+        features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
+        features.append(0)
+
+    return features
+
+
+def _predict_tag_mymodel(token, model_parameters):
     pos_encoder = model_parameters['pos_encoder']
     dep_encoder = model_parameters['dep_encoder']
     tag_encoder = model_parameters['tag_encoder']
+    lemma_encoder = model_parameters['lemma_encoder']
+    morph_encoder = model_parameters['morph_encoder']
+    scaler = model_parameters['scaler']
     model = model_parameters['model']
 
-    # 提取特征
-    token_embedding = token.vector.reshape(1, -1)
-    token_pos = np.array([token.pos_]).reshape(-1, 1)
-    token_dep = np.array([token.dep_]).reshape(-1, 1)
+    features = combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encoder)
+    X = np.array(features).reshape(1, -1)
+    X = scaler.transform(X)
 
-    # 对 POS 和 Dependency 进行编码
-    pos_encoded = pos_encoder.transform(token_pos)
-    dep_encoded = dep_encoder.transform(token_dep)
-
-    # 合并特征
-    X = np.hstack([token_embedding, pos_encoded, dep_encoded])
-
-    # 预测标签概率
-    proba = model.predict_proba(X)[0]
-
-    # 获取标签名称
-    tag_probs = list(zip(tag_encoder.classes_, proba))
-    # 按概率排序
-    sorted_tag_probs = sorted(tag_probs, key=lambda x: -x[1])
-
-    return sorted_tag_probs
+    log_probs = model.predict_proba(X)[0]
+    distribution = list(zip(tag_encoder.classes_, log_probs))
+    sorted_distribution = sorted(distribution, key=lambda tag_logprob_pair: -tag_logprob_pair[1])
+    return sorted_distribution
 
 def train_my_model(data):
     """Train a logistic regression model for p(<tag> | <word embedding>).
@@ -206,50 +267,68 @@ def train_my_model(data):
     # Be sure to describe and justify all decisions in your report.
     #
     ##########################################################################
-    train_embeddings = []
-    train_pos = []
-    train_dep = []
+    train_X = []
     train_y = []
+    pos_list = []
+    dep_list = []
+    lemma_list = []
+    morph_feature_list = []
+    is_num_list = []
 
     for sample in data:
-        tokens = sample['annotated_text']
-        for token in tokens:
-            train_embeddings.append(token.vector)
-            train_pos.append(token.pos_)
-            train_dep.append(token.dep_)
+        for token in sample['annotated_text']:
+            pos_list.append(token.pos_)
+            dep_list.append(token.dep_)
+            lemma_list.append(token.lemma_)
+            is_num_list.append(token.pos_ == 'NUM')
+
+            # head token
+            pos_list.append(token.head.pos_)
+            dep_list.append(token.head.dep_)
+            lemma_list.append(token.head.lemma_)
+            is_num_list.append(token.head.pos_ == 'NUM')
+
+            morph_features = token.morph.to_dict()
+            for key, value in morph_features.items():
+                morph_feature_list.append(f"{key}={value}")
+
+    pos_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    dep_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    lemma_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    morph_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+
+    pos_encoder.fit(np.array(pos_list).reshape(-1, 1))
+    dep_encoder.fit(np.array(dep_list).reshape(-1, 1))
+    lemma_encoder.fit(np.array(lemma_list).reshape(-1, 1))
+    morph_encoder.fit(np.array(morph_feature_list).reshape(-1, 1))
+
+    for sample in data:
+        for token in sample['annotated_text']:
+            features = combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encoder)
+            train_X.append(features)
             train_y.append(token._.bio_slot_label)
 
-    train_embeddings = np.array(train_embeddings)
-    pos_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    pos_encoded = pos_encoder.fit_transform(np.array(train_pos).reshape(-1, 1))
+    train_X = np.array(train_X)
+    scaler = sklearn.preprocessing.StandardScaler()
+    train_X = scaler.fit_transform(train_X)
 
-    dep_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    dep_encoded = dep_encoder.fit_transform(np.array(train_dep).reshape(-1, 1))
-
-    if pos_encoded.ndim == 1:
-        pos_encoded = pos_encoded.reshape(-1, 1)
-    if dep_encoded.ndim == 1:
-        dep_encoded = dep_encoded.reshape(-1, 1)
-
-    train_X = np.hstack([train_embeddings, pos_encoded, dep_encoded])
     tag_encoder = sklearn.preprocessing.LabelEncoder()
     train_y_encoded = tag_encoder.fit_transform(train_y)
 
-    model = sklearn.linear_model.LogisticRegression(multi_class='multinomial',
-                               solver='newton-cg',
-                               max_iter=1000
-                               ).fit(train_X, train_y_encoded)
-
-    print(f'> Finished training logistic regression on {len(train_embeddings)} tokens')
+    model = sklearn.linear_model.LogisticRegression(multi_class='multinomial', solver='newton-cg', max_iter=2000, class_weight='balanced').fit(train_X, train_y_encoded)
 
     model_parameters = {
         'pos_encoder': pos_encoder,
         'dep_encoder': dep_encoder,
         'tag_encoder': tag_encoder,
+        'lemma_encoder': lemma_encoder,
+        'morph_encoder': morph_encoder,
+        'scaler': scaler,
         'model': model
     }
 
-    return lambda token: _predict_my_model(token, model_parameters)
+    print(f'> Finished training logistic regression on {len(train_X)} tokens')
+    return lambda token: _predict_tag_mymodel(token, model_parameters)
 
 
 def predict_independent_tags(tag_predictor, data):
