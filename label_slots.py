@@ -9,6 +9,7 @@ from collections import defaultdict
 import sklearn.linear_model
 import sklearn.preprocessing
 import spacy
+import numpy as np
 
 import utils
 
@@ -136,6 +137,43 @@ def train_tag_logreg(data):
     print(f'> Finished training logistic regression on {len(train_X)} tokens')
     return lambda token: _predict_tag_logreg(token, model, tag_encoder)
 
+def _predict_my_model(token, model_parameters):
+    """使用训练好的逻辑回归模型和附加特征预测给定 token 的标签。
+
+    参数：
+        token: 要预测的 spaCy token。
+        model_parameters: 包含模型和编码器的参数字典。
+
+    返回：
+        List[Tuple[str, float]]: 标签和对应概率的排序列表。
+    """
+
+    pos_encoder = model_parameters['pos_encoder']
+    dep_encoder = model_parameters['dep_encoder']
+    tag_encoder = model_parameters['tag_encoder']
+    model = model_parameters['model']
+
+    # 提取特征
+    token_embedding = token.vector.reshape(1, -1)
+    token_pos = np.array([token.pos_]).reshape(-1, 1)
+    token_dep = np.array([token.dep_]).reshape(-1, 1)
+
+    # 对 POS 和 Dependency 进行编码
+    pos_encoded = pos_encoder.transform(token_pos)
+    dep_encoded = dep_encoder.transform(token_dep)
+
+    # 合并特征
+    X = np.hstack([token_embedding, pos_encoded, dep_encoded])
+
+    # 预测标签概率
+    proba = model.predict_proba(X)[0]
+
+    # 获取标签名称
+    tag_probs = list(zip(tag_encoder.classes_, proba))
+    # 按概率排序
+    sorted_tag_probs = sorted(tag_probs, key=lambda x: -x[1])
+
+    return sorted_tag_probs
 
 def train_my_model(data):
     """Train a logistic regression model for p(<tag> | <word embedding>).
@@ -168,6 +206,50 @@ def train_my_model(data):
     # Be sure to describe and justify all decisions in your report.
     #
     ##########################################################################
+    train_embeddings = []
+    train_pos = []
+    train_dep = []
+    train_y = []
+
+    for sample in data:
+        tokens = sample['annotated_text']
+        for token in tokens:
+            train_embeddings.append(token.vector)
+            train_pos.append(token.pos_)
+            train_dep.append(token.dep_)
+            train_y.append(token._.bio_slot_label)
+
+    train_embeddings = np.array(train_embeddings)
+    pos_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    pos_encoded = pos_encoder.fit_transform(np.array(train_pos).reshape(-1, 1))
+
+    dep_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    dep_encoded = dep_encoder.fit_transform(np.array(train_dep).reshape(-1, 1))
+
+    if pos_encoded.ndim == 1:
+        pos_encoded = pos_encoded.reshape(-1, 1)
+    if dep_encoded.ndim == 1:
+        dep_encoded = dep_encoded.reshape(-1, 1)
+
+    train_X = np.hstack([train_embeddings, pos_encoded, dep_encoded])
+    tag_encoder = sklearn.preprocessing.LabelEncoder()
+    train_y_encoded = tag_encoder.fit_transform(train_y)
+
+    model = sklearn.linear_model.LogisticRegression(multi_class='multinomial',
+                               solver='newton-cg',
+                               max_iter=1000
+                               ).fit(train_X, train_y_encoded)
+
+    print(f'> Finished training logistic regression on {len(train_embeddings)} tokens')
+
+    model_parameters = {
+        'pos_encoder': pos_encoder,
+        'dep_encoder': dep_encoder,
+        'tag_encoder': tag_encoder,
+        'model': model
+    }
+
+    return lambda token: _predict_my_model(token, model_parameters)
 
 
 def predict_independent_tags(tag_predictor, data):
