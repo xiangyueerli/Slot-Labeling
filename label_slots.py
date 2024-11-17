@@ -141,8 +141,10 @@ def train_tag_logreg(data):
 def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encoder):
     features = []
 
+    # 当前词的词嵌入
     features.extend(token.vector)
 
+    # POS、DEP、Lemma 编码
     pos_encoded = pos_encoder.transform([[token.pos_]])[0]
     dep_encoded = dep_encoder.transform([[token.dep_]])[0]
     lemma_encoded = lemma_encoder.transform([[token.lemma_]])[0]
@@ -150,15 +152,18 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
     features.extend(dep_encoded)
     features.extend(lemma_encoded)
 
+    # 是否为数词
     features.append(int(token.pos_ == 'NUM'))
 
+    # 词长
     features.append(len(token.text))
 
+    # 形态学特征编码
     morph_features = token.morph.to_dict()
     morph_feature_values = [f"{key}={value}" for key, value in morph_features.items()]
     if not morph_feature_values:
         morph_feature_values = ['None']
-    morph_encoded = morph_encoder.transform(np.array(morph_feature_values).reshape(-1, 1)).sum(axis=0)
+    morph_encoded = morph_encoder.transform([morph_feature_values])[0]
     features.extend(morph_encoded)
 
     if token.i > 0:
@@ -195,11 +200,10 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
         features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
         features.append(0)
 
+    # Head token
     head_token = token.head
     if head_token is not token:
-        # Head token's embedding
         features.extend(head_token.vector)
-        # Head token's POS and DEP
         pos_encoded = pos_encoder.transform([[head_token.pos_]])[0]
         dep_encoded = dep_encoder.transform([[head_token.dep_]])[0]
         lemma_encoded = lemma_encoder.transform([[head_token.lemma_]])[0]
@@ -208,7 +212,6 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
         features.extend(lemma_encoded)
         features.append(int(head_token.pos_ == 'NUM'))
     else:
-        # if it is the root token, fill with zeros
         features.extend(np.zeros_like(token.vector))
         features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
         features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
@@ -229,9 +232,9 @@ def _predict_tag_mymodel(token, model_parameters):
 
     features = combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encoder)
     X = np.array(features).reshape(1, -1)
-    X = scaler.transform(X)
+    # X = scaler.transform(X)
 
-    log_probs = model.predict_proba(X)[0]
+    log_probs = model.predict_log_proba(X)[0]
     distribution = list(zip(tag_encoder.classes_, log_probs))
     sorted_distribution = sorted(distribution, key=lambda tag_logprob_pair: -tag_logprob_pair[1])
     return sorted_distribution
@@ -292,10 +295,10 @@ def train_my_model(data):
             for key, value in morph_features.items():
                 morph_feature_list.append(f"{key}={value}")
 
-    pos_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    dep_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    lemma_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    morph_encoder = sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    pos_encoder = sklearn.preprocessing.OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+    dep_encoder = sklearn.preprocessing.OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+    lemma_encoder = sklearn.preprocessing.OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+    morph_encoder = sklearn.preprocessing.MultiLabelBinarizer()
 
     pos_encoder.fit(np.array(pos_list).reshape(-1, 1))
     dep_encoder.fit(np.array(dep_list).reshape(-1, 1))
@@ -310,7 +313,7 @@ def train_my_model(data):
 
     train_X = np.array(train_X)
     scaler = sklearn.preprocessing.StandardScaler()
-    train_X = scaler.fit_transform(train_X)
+    # train_X = scaler.fit_transform(train_X)
 
     tag_encoder = sklearn.preprocessing.LabelEncoder()
     train_y_encoded = tag_encoder.fit_transform(train_y)
