@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import os
+import re
 from collections import defaultdict
 
 import sklearn.linear_model
@@ -152,8 +153,9 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
     features.extend(dep_encoded)
     features.extend(lemma_encoded)
 
-    # 是否为数词
-    features.append(int(token.pos_ == 'NUM'))
+    features.append(int(token.is_stop))
+    features.append(int(token.is_upper))
+    features.append(int(token.like_num))
 
     # 词长
     features.append(len(token.text))
@@ -162,7 +164,7 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
     morph_features = token.morph.to_dict()
     morph_feature_values = [f"{key}={value}" for key, value in morph_features.items()]
     if not morph_feature_values:
-        morph_feature_values = ['None']
+        morph_feature_values = ['<NONE>']
     morph_encoded = morph_encoder.transform([morph_feature_values])[0]
     features.extend(morph_encoded)
 
@@ -283,14 +285,6 @@ def train_my_model(data):
             pos_list.append(token.pos_)
             dep_list.append(token.dep_)
             lemma_list.append(token.lemma_)
-            is_num_list.append(token.pos_ == 'NUM')
-
-            # head token
-            pos_list.append(token.head.pos_)
-            dep_list.append(token.head.dep_)
-            lemma_list.append(token.head.lemma_)
-            is_num_list.append(token.head.pos_ == 'NUM')
-
             morph_features = token.morph.to_dict()
             for key, value in morph_features.items():
                 morph_feature_list.append(f"{key}={value}")
@@ -318,7 +312,7 @@ def train_my_model(data):
     tag_encoder = sklearn.preprocessing.LabelEncoder()
     train_y_encoded = tag_encoder.fit_transform(train_y)
 
-    model = sklearn.linear_model.LogisticRegression(multi_class='multinomial', solver='newton-cg', max_iter=2000, class_weight='balanced').fit(train_X, train_y_encoded)
+    model = sklearn.linear_model.LogisticRegression(multi_class='multinomial', solver='newton-cg', max_iter=2000).fit(train_X, train_y_encoded)
 
     model_parameters = {
         'pos_encoder': pos_encoder,
