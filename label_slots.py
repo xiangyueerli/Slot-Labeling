@@ -157,6 +157,12 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
     features.append(int(token.is_upper))
     features.append(int(token.like_num))
 
+    # 修改点：增加数字和修饰名词关系
+    if token.dep_ == 'nummod' and token.head.text in ['room', 'rooms', 'bedrooms', 'bedroom', 'Room', 'Rooms', 'Bedrooms', 'Bedroom',]:
+        features.append(1)  # 标识数字修饰名词
+    else:
+        features.append(0)
+
     # 词长
     features.append(len(token.text))
 
@@ -168,39 +174,45 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
     morph_encoded = morph_encoder.transform([morph_feature_values])[0]
     features.extend(morph_encoded)
 
-    if token.i > 0:
-        prev_token = token.doc[token.i - 1]
-        features.extend(prev_token.vector)
-        pos_encoded = pos_encoder.transform([[prev_token.pos_]])[0]
-        dep_encoded = dep_encoder.transform([[prev_token.dep_]])[0]
-        lemma_encoded = lemma_encoder.transform([[prev_token.lemma_]])[0]
-        features.extend(pos_encoded)
-        features.extend(dep_encoded)
-        features.extend(lemma_encoded)
-        features.append(int(prev_token.pos_ == 'NUM'))
+    # 前两个单词特征提取
+    if token.i > 1:
+        for j in range(1, 3):  # 前两个单词
+            prev_token = token.doc[token.i - j]
+            features.extend(prev_token.vector)
+            # pos_encoded = pos_encoder.transform([[prev_token.pos_]])[0]
+            # dep_encoded = dep_encoder.transform([[prev_token.dep_]])[0]
+            # lemma_encoded = lemma_encoder.transform([[prev_token.lemma_]])[0]
+            # features.extend(pos_encoded)
+            # features.extend(dep_encoded)
+            # features.extend(lemma_encoded)
+            # features.append(int(prev_token.pos_ == 'NUM'))
     else:
-        features.extend(np.zeros_like(token.vector))
-        features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
-        features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
-        features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
-        features.append(0)
+        for _ in range(2):  # 如果不足两个单词，用零填充两次
+            features.extend(np.zeros_like(token.vector))
+            # features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
+            # features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
+            # features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
+            # features.append(0)
 
-    if token.i < len(token.doc) - 1:
-        next_token = token.doc[token.i + 1]
-        features.extend(next_token.vector)
-        pos_encoded = pos_encoder.transform([[next_token.pos_]])[0]
-        dep_encoded = dep_encoder.transform([[next_token.dep_]])[0]
-        lemma_encoded = lemma_encoder.transform([[next_token.lemma_]])[0]
-        features.extend(pos_encoded)
-        features.extend(dep_encoded)
-        features.extend(lemma_encoded)
-        features.append(int(next_token.pos_ == 'NUM'))
+    # 后两个单词特征提取
+    if token.i < len(token.doc) - 2:
+        for j in range(1, 3):  # 后两个单词
+            next_token = token.doc[token.i + j]
+            features.extend(next_token.vector)
+            # pos_encoded = pos_encoder.transform([[next_token.pos_]])[0]
+            # dep_encoded = dep_encoder.transform([[next_token.dep_]])[0]
+            # lemma_encoded = lemma_encoder.transform([[next_token.lemma_]])[0]
+            # features.extend(pos_encoded)
+            # features.extend(dep_encoded)
+            # features.extend(lemma_encoded)
+            # features.append(int(next_token.pos_ == 'NUM'))
     else:
-        features.extend(np.zeros_like(token.vector))
-        features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
-        features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
-        features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
-        features.append(0)
+        for _ in range(2):  # 如果不足两个单词，用零填充两次
+            features.extend(np.zeros_like(token.vector))
+            # features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
+            # features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
+            # features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
+            # features.append(0)
 
     # Head token
     head_token = token.head
