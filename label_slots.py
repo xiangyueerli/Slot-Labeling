@@ -186,6 +186,13 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
             # features.extend(dep_encoded)
             # features.extend(lemma_encoded)
             # features.append(int(prev_token.pos_ == 'NUM'))
+
+            # morph_features = prev_token.morph.to_dict()
+            # morph_feature_values = [f"{key}={value}" for key, value in morph_features.items()]
+            # if not morph_feature_values:
+            #     morph_feature_values = ['<NONE>']
+            # morph_encoded = morph_encoder.transform([morph_feature_values])[0]
+            # features.extend(morph_encoded)
     else:
         for _ in range(2):  # 如果不足两个单词，用零填充两次
             features.extend(np.zeros_like(token.vector))
@@ -193,6 +200,8 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
             # features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
             # features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
             # features.append(0)
+
+            # features.extend(np.zeros(len(morph_encoder.classes_)))
 
     # 后两个单词特征提取
     if token.i < len(token.doc) - 2:
@@ -206,6 +215,13 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
             # features.extend(dep_encoded)
             # features.extend(lemma_encoded)
             # features.append(int(next_token.pos_ == 'NUM'))
+
+            # morph_features = next_token.morph.to_dict()
+            # morph_feature_values = [f"{key}={value}" for key, value in morph_features.items()]
+            # if not morph_feature_values:
+            #     morph_feature_values = ['<NONE>']
+            # morph_encoded = morph_encoder.transform([morph_feature_values])[0]
+            # features.extend(morph_encoded)
     else:
         for _ in range(2):  # 如果不足两个单词，用零填充两次
             features.extend(np.zeros_like(token.vector))
@@ -213,6 +229,8 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
             # features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
             # features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
             # features.append(0)
+
+            # features.extend(np.zeros(len(morph_encoder.classes_)))
 
     # Head token
     head_token = token.head
