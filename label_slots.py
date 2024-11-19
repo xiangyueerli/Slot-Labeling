@@ -4,7 +4,6 @@ import argparse
 import json
 import math
 import os
-import re
 from collections import defaultdict
 
 import sklearn.linear_model
@@ -185,7 +184,7 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
             # features.extend(pos_encoded)
             # features.extend(dep_encoded)
             # features.extend(lemma_encoded)
-            # features.append(int(prev_token.pos_ == 'NUM'))
+            features.append(int(prev_token.pos_ == 'NUM'))
 
             # morph_features = prev_token.morph.to_dict()
             # morph_feature_values = [f"{key}={value}" for key, value in morph_features.items()]
@@ -199,7 +198,7 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
             # features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
             # features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
             # features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
-            # features.append(0)
+            features.append(0)
 
             # features.extend(np.zeros(len(morph_encoder.classes_)))
 
@@ -214,7 +213,7 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
             # features.extend(pos_encoded)
             # features.extend(dep_encoded)
             # features.extend(lemma_encoded)
-            # features.append(int(next_token.pos_ == 'NUM'))
+            features.append(int(next_token.pos_ == 'NUM'))
 
             # morph_features = next_token.morph.to_dict()
             # morph_feature_values = [f"{key}={value}" for key, value in morph_features.items()]
@@ -228,7 +227,7 @@ def combine_features(token, pos_encoder, dep_encoder, lemma_encoder, morph_encod
             # features.extend(np.zeros(pos_encoder.categories_[0].shape[0]))
             # features.extend(np.zeros(dep_encoder.categories_[0].shape[0]))
             # features.extend(np.zeros(lemma_encoder.categories_[0].shape[0]))
-            # features.append(0)
+            features.append(0)
 
             # features.extend(np.zeros(len(morph_encoder.classes_)))
 
